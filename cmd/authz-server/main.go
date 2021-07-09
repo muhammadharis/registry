@@ -28,13 +28,14 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/context"
+	"google.golang.org/api/idtoken"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
@@ -49,8 +50,6 @@ import (
 var (
 	portFlag   = flag.String("p", ":50051", "port")
 	configFlag = flag.String("c", "", "configuration file")
-	conn       *grpc.ClientConn
-	hs         *health.Server
 )
 
 // AuthzConfig configures the authz filter.
@@ -126,12 +125,12 @@ func (a *authorizationServer) check(ctx context.Context, req *auth.CheckRequest)
 				return allowOrDenyUser(email, req)
 			}
 		}
-		// log a modified signature (this will cause verification to fail)
+		// log a modified signature (this will cause validation to fail)
 		if signature == "SIGNATURE_REMOVED_BY_GOOGLE" {
 			log.Printf("Token has altered signature: %s", signature)
 		}
-		// try to verify an identity token
-		token, err := getVerifiedToken(credential)
+		// try to validate an identity token
+		token, err := getValidatedToken(credential)
 		if err != nil {
 			return nil, err
 		}
@@ -279,7 +278,10 @@ func getUser(credential string) (*GoogleUser, error) {
 		return nil, err
 	}
 	req.Header.Add("Authorization", "Bearer "+credential)
-	resp, err := http.DefaultClient.Do(req)
+	var client = &http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -308,57 +310,21 @@ func getUser(credential string) (*GoogleUser, error) {
 	return user, nil
 }
 
-// GoogleToken holds information about a Google identity token (a JWT).
-type GoogleToken struct {
-	Email         string `json:"email"`
-	EmailVerified string `json:"email_verified"`
+// GoogleTokenClaims holds claims from a Google identity token (a JWT).
+type GoogleTokenClaims struct {
+	Email         string
+	EmailVerified bool
 }
 
-// in-memory cache of tokens
-var tokens map[string]*GoogleToken
-
-func getVerifiedToken(credential string) (*GoogleToken, error) {
-	if tokens == nil {
-		tokens = make(map[string]*GoogleToken)
-	}
-	// first check the cache
-	cachedToken := tokens[credential]
-	if cachedToken != nil {
-		log.Printf("cached token: %+v for %s", cachedToken, credential)
-		return cachedToken, nil
-	}
-	// otherwise, call the Google tokeninfo API
-	req, err := http.NewRequest("GET", "https://oauth2.googleapis.com/tokeninfo", nil)
+func getValidatedToken(credential string) (*GoogleTokenClaims, error) {
+	payload, err := idtoken.Validate(context.Background(), credential, "")
 	if err != nil {
 		return nil, err
 	}
-	q := req.URL.Query()
-	q.Add("id_token", credential)
-	req.URL.RawQuery = q.Encode()
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != 200 {
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("Unsuccessful response from tokeninfo service: %d (%s): %s",
-			resp.StatusCode, resp.Status, string(b))
-	}
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	token := &GoogleToken{}
-	err = json.Unmarshal(b, token)
-	if err != nil {
-		return nil, err
-	}
-	tokens[credential] = token
-	log.Printf("verified token: %+v for %s", token, credential)
-	return token, nil
+	return &GoogleTokenClaims{
+		Email:         payload.Claims["email"].(string),
+		EmailVerified: payload.Claims["email_verified"].(bool),
+	}, nil
 }
 
 func allowAuthorizedUser(username string) *auth.CheckResponse {
