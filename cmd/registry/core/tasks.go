@@ -48,8 +48,8 @@ func WorkerPool(ctx context.Context, n int) (chan<- Task, chan<- Result, func())
 
 	wait := func() {
 		close(taskQueue)
-		close(results)
 		wg.Wait()
+		close(results)
 	}
 
 	return taskQueue, results, wait
