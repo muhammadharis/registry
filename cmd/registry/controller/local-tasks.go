@@ -48,7 +48,7 @@ func (task *ExecCommandTask) String() string {
 	return "Execute command: " + task.Action.Command
 }
 
-func (task *ExecCommandTask) Run(ctx context.Context) error {
+func (task *ExecCommandTask) Run(ctx context.Context) (core.Result, error) {
 	// The monitoring metrics/dashboards are built on top of the format of the log messages here.
 	// Check the metric filters before making any changes to the format.
 	// Location: registry/deployments/controller/dashboard/*
@@ -59,7 +59,7 @@ func (task *ExecCommandTask) Run(ctx context.Context) error {
 
 	if strings.HasPrefix(task.Action.Command, "registry resolve") {
 		logger.Debug("Failed Execution: 'registry resolve' not allowed in action")
-		return errors.New("'registry resolve' not allowed in action")
+		return nil, errors.New("'registry resolve' not allowed in action")
 	}
 
 	// first party registry commands
@@ -71,7 +71,7 @@ func (task *ExecCommandTask) Run(ctx context.Context) error {
 
 		if err := cmd.Run(); err != nil {
 			logger.WithError(err).Debug("Failed Execution: failed running command")
-			return errors.New("failed running command")
+			return nil, errors.New("failed running command")
 		}
 	} else { //third party commands
 		fullCmd := strings.Fields(task.Action.Command)
@@ -87,19 +87,19 @@ func (task *ExecCommandTask) Run(ctx context.Context) error {
 
 		if err := cmd.Run(); err != nil {
 			logger.WithError(err).Debug("Failed Execution: failed running command")
-			return errors.New("failed running command")
+			return nil, errors.New("failed running command")
 		}
 	}
 
 	if task.Action.RequiresReceipt {
 		if err := touchArtifact(ctx, task.Action.GeneratedResource, task.Action.Command); err != nil {
 			logger.WithError(err).Debug("Failed Execution: failed uploading receipt")
-			return errors.New("failed uploading receipt")
+			return nil, errors.New("failed uploading receipt")
 		}
 	}
 
 	logger.Debug("Successful Execution:")
-	return nil
+	return nil, nil
 }
 
 func touchArtifact(ctx context.Context, artifactName, action string) error {

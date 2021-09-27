@@ -43,7 +43,7 @@ func indexCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -72,17 +72,17 @@ func (task *computeIndexTask) String() string {
 	return "compute index " + task.specName
 }
 
-func (task *computeIndexTask) Run(ctx context.Context) error {
+func (task *computeIndexTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	data, err := core.GetBytesForSpec(ctx, task.client, spec)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	relation := "index"
 	log.Debugf("Computing %s/artifacts/%s", spec.Name, relation)
@@ -90,10 +90,10 @@ func (task *computeIndexTask) Run(ctx context.Context) error {
 	if core.IsProto(spec.GetMimeType()) && core.IsZipArchive(spec.GetMimeType()) {
 		index, err = core.NewIndexFromZippedProtos(data)
 		if err != nil {
-			return fmt.Errorf("error processing protos: %s", spec.Name)
+			return nil, fmt.Errorf("error processing protos: %s", spec.Name)
 		}
 	} else {
-		return fmt.Errorf("we don't know how to compute the index of %s", spec.Name)
+		return nil, fmt.Errorf("we don't know how to compute the index of %s", spec.Name)
 	}
 	subject := spec.GetName()
 	messageData, _ := proto.Marshal(index)
@@ -104,7 +104,7 @@ func (task *computeIndexTask) Run(ctx context.Context) error {
 	}
 	err = core.SetArtifact(ctx, task.client, artifact)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }

@@ -41,7 +41,7 @@ func Command(ctx context.Context) *cobra.Command {
 			}
 
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 
 			err = matchAndHandleDeleteCmd(ctx, client, taskQueue, args[0], filter)
@@ -65,19 +65,19 @@ func (task *deleteTask) String() string {
 	return "delete " + task.resourceName
 }
 
-func (task *deleteTask) Run(ctx context.Context) error {
+func (task *deleteTask) Run(ctx context.Context) (core.Result, error) {
 	log.Debugf("Deleting %s %s", task.resourceKind, task.resourceName)
 	switch task.resourceKind {
 	case "api":
-		return task.client.DeleteApi(ctx, &rpc.DeleteApiRequest{Name: task.resourceName})
+		return nil, task.client.DeleteApi(ctx, &rpc.DeleteApiRequest{Name: task.resourceName})
 	case "version":
-		return task.client.DeleteApiVersion(ctx, &rpc.DeleteApiVersionRequest{Name: task.resourceName})
+		return nil, task.client.DeleteApiVersion(ctx, &rpc.DeleteApiVersionRequest{Name: task.resourceName})
 	case "spec":
-		return task.client.DeleteApiSpec(ctx, &rpc.DeleteApiSpecRequest{Name: task.resourceName})
+		return nil, task.client.DeleteApiSpec(ctx, &rpc.DeleteApiSpecRequest{Name: task.resourceName})
 	case "artifact":
-		return task.client.DeleteArtifact(ctx, &rpc.DeleteArtifactRequest{Name: task.resourceName})
+		return nil, task.client.DeleteArtifact(ctx, &rpc.DeleteArtifactRequest{Name: task.resourceName})
 	default:
-		return nil
+		return nil, nil
 	}
 }
 

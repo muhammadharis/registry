@@ -44,7 +44,7 @@ func referencesCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -73,13 +73,13 @@ func (task *computeReferencesTask) String() string {
 	return "compute references " + task.specName
 }
 
-func (task *computeReferencesTask) Run(ctx context.Context) error {
+func (task *computeReferencesTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	relation := "references"
 	log.Debugf("Computing %s/properties/%s", spec.Name, relation)
@@ -87,14 +87,18 @@ func (task *computeReferencesTask) Run(ctx context.Context) error {
 	if core.IsProto(spec.MimeType) && core.IsZipArchive(spec.MimeType) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		references, err = core.NewReferencesFromZippedProtos(data)
 		if err != nil {
-			return fmt.Errorf("error processing protos: %s", spec.Name)
+			return nil, fmt.Errorf("error processing protos: %s", spec.Name)
 		}
 	} else {
-		return fmt.Errorf("we don't know how to compute references for %s of type %s", spec.Name, spec.MimeType)
+		return nil, fmt.Errorf(
+			"we don't know how to compute references for %s of type %s",
+			spec.Name,
+			spec.MimeType,
+		)
 	}
 	subject := spec.Name
 	messageData, _ := proto.Marshal(references)
@@ -105,7 +109,7 @@ func (task *computeReferencesTask) Run(ctx context.Context) error {
 	}
 	err = core.SetArtifact(ctx, task.client, artifact)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }

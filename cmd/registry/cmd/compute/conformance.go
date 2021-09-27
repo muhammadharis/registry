@@ -118,7 +118,7 @@ func conformanceCommand(ctx context.Context) *cobra.Command {
 			}
 
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 16)
+			taskQueue, _, wait := core.WorkerPool(ctx, 16)
 			defer wait()
 
 			// Generate tasks.
@@ -155,23 +155,27 @@ func (task *computeConformanceTask) String() string {
 	return fmt.Sprintf("compute %s/conformance-%s", task.spec.GetName(), task.linter.GetName())
 }
 
-func (task *computeConformanceTask) Run(ctx context.Context) error {
+func worker() {
+
+}
+
+func (task *computeConformanceTask) Run(ctx context.Context) (core.Result, error) {
 	// Get the linter
 	linter := task.linter
 	if linter == nil {
-		return errors.New("linter is nil")
+		return nil, errors.New("linter is nil")
 	}
 
 	// Get the spec's bytes
 	data, err := core.GetBytesForSpec(ctx, task.client, task.spec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Put the spec in a temporary directory
 	root, err := ioutil.TempDir("", "registry-openapi-")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	name := filepath.Base(task.spec.GetName())
 
@@ -182,13 +186,13 @@ func (task *computeConformanceTask) Run(ctx context.Context) error {
 	filePath := filepath.Join(root, name)
 	err = ioutil.WriteFile(filePath, data, 0644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Lint the directory containing the spec
 	lintProblems, err := linter.LintSpec(task.spec.GetMimeType(), filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Store the Lint results as an artifact on the spec.
@@ -198,7 +202,7 @@ func (task *computeConformanceTask) Run(ctx context.Context) error {
 	subject := task.spec.GetName()
 	messageData, err := proto.Marshal(lintFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	artifact := &rpc.Artifact{
 		Name:     subject + "/artifacts/" + lintRelation(task.linter.GetName()),
@@ -207,8 +211,8 @@ func (task *computeConformanceTask) Run(ctx context.Context) error {
 	}
 	err = core.SetArtifact(ctx, task.client, artifact)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return nil, err
 }

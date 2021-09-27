@@ -61,7 +61,7 @@ func openAPICommand(ctx context.Context) *cobra.Command {
 
 func scanDirectoryForOpenAPI(ctx context.Context, client connection.Client, projectID, baseURI, directory string) {
 	// create a queue for upload tasks and wait for the workers to finish after filling it.
-	taskQueue, wait := core.WorkerPool(ctx, 64)
+	taskQueue, _, wait := core.WorkerPool(ctx, 64)
 	defer wait()
 
 	// walk a directory hierarchy, uploading every API spec that matches a set of expected file names.
@@ -124,27 +124,27 @@ func (task *uploadOpenAPITask) String() string {
 	return "upload openapi " + task.path
 }
 
-func (task *uploadOpenAPITask) Run(ctx context.Context) error {
+func (task *uploadOpenAPITask) Run(ctx context.Context) (core.Result, error) {
 	// Populate API path fields using the file's path.
 	if err := task.populateFields(); err != nil {
-		return err
+		return nil, err
 	}
 	log.Debugf("^^ apis/%s/versions/%s/specs/%s", task.apiID, task.versionID, task.specID)
 
 	// If the API does not exist, create it.
 	if err := task.createAPI(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API version does not exist, create it.
 	if err := task.createVersion(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec does not exist, create it.
 	if err := task.createSpec(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec needs a new revision, create it.
-	return task.updateSpec(ctx)
+	return nil, task.updateSpec(ctx)
 }
 
 func (task *uploadOpenAPITask) populateFields() error {

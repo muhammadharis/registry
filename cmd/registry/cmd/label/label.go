@@ -46,7 +46,7 @@ func Command(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 
 			valuesToClear := make([]string, 0)
@@ -165,11 +165,11 @@ func (task *labelApiTask) String() string {
 	return "label " + task.api.Name
 }
 
-func (task *labelApiTask) Run(ctx context.Context) error {
+func (task *labelApiTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.api.Labels, err = task.labeling.Apply(task.api.Labels)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApi(ctx,
 		&rpc.UpdateApiRequest{
@@ -178,7 +178,7 @@ func (task *labelApiTask) Run(ctx context.Context) error {
 				Paths: []string{"labels"},
 			},
 		})
-	return err
+	return nil, err
 }
 
 type labelVersionTask struct {
@@ -191,11 +191,11 @@ func (task *labelVersionTask) String() string {
 	return "label " + task.version.Name
 }
 
-func (task *labelVersionTask) Run(ctx context.Context) error {
+func (task *labelVersionTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.version.Labels, err = task.labeling.Apply(task.version.Labels)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApiVersion(ctx,
 		&rpc.UpdateApiVersionRequest{
@@ -204,7 +204,7 @@ func (task *labelVersionTask) Run(ctx context.Context) error {
 				Paths: []string{"labels"},
 			},
 		})
-	return err
+	return nil, err
 }
 
 type labelSpecTask struct {
@@ -217,11 +217,11 @@ func (task *labelSpecTask) String() string {
 	return "label " + task.spec.Name
 }
 
-func (task *labelSpecTask) Run(ctx context.Context) error {
+func (task *labelSpecTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.spec.Labels, err = task.labeling.Apply(task.spec.Labels)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApiSpec(ctx,
 		&rpc.UpdateApiSpecRequest{
@@ -230,5 +230,5 @@ func (task *labelSpecTask) Run(ctx context.Context) error {
 				Paths: []string{"labels"},
 			},
 		})
-	return err
+	return nil, err
 }

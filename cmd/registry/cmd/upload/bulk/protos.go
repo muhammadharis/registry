@@ -61,7 +61,7 @@ func protosCommand(ctx context.Context) *cobra.Command {
 
 func scanDirectoryForProtos(ctx context.Context, client connection.Client, projectID, baseURI, directory string) {
 	// create a queue for upload tasks and wait for the workers to finish after filling it.
-	taskQueue, wait := core.WorkerPool(ctx, 64)
+	taskQueue, _, wait := core.WorkerPool(ctx, 64)
 	defer wait()
 
 	dirPattern := regexp.MustCompile("v.*[1-9]+.*")
@@ -105,25 +105,25 @@ func (task *uploadProtoTask) String() string {
 	return "upload proto " + task.path
 }
 
-func (task *uploadProtoTask) Run(ctx context.Context) error {
+func (task *uploadProtoTask) Run(ctx context.Context) (core.Result, error) {
 	// Populate API path fields using the file's path.
 	task.populateFields()
 	log.Debugf("^^ apis/%s/versions/%s/specs/%s", task.apiID, task.versionID, task.specID)
 
 	// If the API does not exist, create it.
 	if err := task.createAPI(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API version does not exist, create it.
 	if err := task.createVersion(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec does not exist, create it.
 	if err := task.createSpec(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec needs a new revision, create it.
-	return task.updateSpec(ctx)
+	return nil, task.updateSpec(ctx)
 }
 
 func (task *uploadProtoTask) populateFields() {

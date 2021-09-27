@@ -46,7 +46,7 @@ func discoveryCommand(ctx context.Context) *cobra.Command {
 			}
 
 			// create a queue for upload tasks and wait for the workers to finish after filling it.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 
 			core.EnsureProjectExists(ctx, client, projectID)
@@ -85,22 +85,22 @@ func (task *uploadDiscoveryTask) String() string {
 	return "upload discovery " + task.path
 }
 
-func (task *uploadDiscoveryTask) Run(ctx context.Context) error {
+func (task *uploadDiscoveryTask) Run(ctx context.Context) (core.Result, error) {
 	log.Debugf("^^ apis/%s/versions/%s/specs/%s", task.apiID, task.versionID, task.specID)
 	// If the API does not exist, create it.
 	if err := task.createAPI(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API version does not exist, create it.
 	if err := task.createVersion(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec does not exist, create it.
 	if err := task.createSpec(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	// If the API spec needs a new revision, create it.
-	return task.updateSpec(ctx)
+	return nil, task.updateSpec(ctx)
 }
 
 func (task *uploadDiscoveryTask) createAPI(ctx context.Context) error {

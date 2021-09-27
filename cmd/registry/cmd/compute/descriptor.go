@@ -47,7 +47,7 @@ func descriptorCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -75,20 +75,20 @@ func (task *computeDescriptorTask) String() string {
 	return "compute descriptor " + task.specName
 }
 
-func (task *computeDescriptorTask) Run(ctx context.Context) error {
+func (task *computeDescriptorTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	name := spec.GetName()
 	relation := "descriptor"
 	log.Debugf("Computing %s/artifacts/%s", name, relation)
 	data, err := core.GetBytesForSpec(ctx, task.client, spec)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	subject := spec.GetName()
 	var typeURL string
@@ -97,26 +97,26 @@ func (task *computeDescriptorTask) Run(ctx context.Context) error {
 		typeURL = "gnostic.openapiv2.Document"
 		document, err = oas2.ParseDocument(data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else if core.IsOpenAPIv3(spec.GetMimeType()) {
 		typeURL = "gnostic.openapiv3.Document"
 		document, err = oas3.ParseDocument(data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else if core.IsDiscovery(spec.GetMimeType()) {
 		typeURL = "gnostic.discoveryv1.Document"
 		document, err = discovery.ParseDocument(data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
-		return fmt.Errorf("unable to generate descriptor for style %s", spec.GetMimeType())
+		return nil, fmt.Errorf("unable to generate descriptor for style %s", spec.GetMimeType())
 	}
 	messageData, err := proto.Marshal(document)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// TODO: consider gzipping descriptors to reduce size;
 	// this will probably require some representation of compression type in the typeURL
@@ -125,5 +125,5 @@ func (task *computeDescriptorTask) Run(ctx context.Context) error {
 		MimeType: core.MimeTypeForMessageType(typeURL),
 		Contents: messageData,
 	}
-	return core.SetArtifact(ctx, task.client, artifact)
+	return nil, core.SetArtifact(ctx, task.client, artifact)
 }

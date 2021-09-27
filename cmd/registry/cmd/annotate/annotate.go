@@ -45,7 +45,7 @@ func Command(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 
 			valuesToClear := make([]string, 0)
@@ -164,11 +164,11 @@ func (task *annotateApiTask) String() string {
 	return "annotate " + task.api.Name
 }
 
-func (task *annotateApiTask) Run(ctx context.Context) error {
+func (task *annotateApiTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.api.Annotations, err = task.labeling.Apply(task.api.Annotations)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApi(ctx,
 		&rpc.UpdateApiRequest{
@@ -177,7 +177,7 @@ func (task *annotateApiTask) Run(ctx context.Context) error {
 				Paths: []string{"annotations"},
 			},
 		})
-	return err
+	return nil, err
 }
 
 type annotateVersionTask struct {
@@ -190,11 +190,11 @@ func (task *annotateVersionTask) String() string {
 	return "annotate " + task.version.Name
 }
 
-func (task *annotateVersionTask) Run(ctx context.Context) error {
+func (task *annotateVersionTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.version.Annotations, err = task.labeling.Apply(task.version.Annotations)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApiVersion(ctx,
 		&rpc.UpdateApiVersionRequest{
@@ -203,7 +203,7 @@ func (task *annotateVersionTask) Run(ctx context.Context) error {
 				Paths: []string{"annotations"},
 			},
 		})
-	return err
+	return nil, err
 }
 
 type annotateSpecTask struct {
@@ -216,11 +216,11 @@ func (task *annotateSpecTask) String() string {
 	return "annotate " + task.spec.Name
 }
 
-func (task *annotateSpecTask) Run(ctx context.Context) error {
+func (task *annotateSpecTask) Run(ctx context.Context) (core.Result, error) {
 	var err error
 	task.spec.Annotations, err = task.labeling.Apply(task.spec.Annotations)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = task.client.UpdateApiSpec(ctx,
 		&rpc.UpdateApiSpecRequest{
@@ -229,5 +229,5 @@ func (task *annotateSpecTask) Run(ctx context.Context) error {
 				Paths: []string{"annotations"},
 			},
 		})
-	return err
+	return nil, err
 }

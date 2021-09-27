@@ -54,7 +54,7 @@ func csvCommand(ctx context.Context) *cobra.Command {
 			}
 			core.EnsureProjectExists(ctx, client, projectID)
 
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 
 			file, err := os.Open(args[0])
@@ -172,7 +172,7 @@ type uploadSpecTask struct {
 	filepath  string
 }
 
-func (t uploadSpecTask) Run(ctx context.Context) error {
+func (t uploadSpecTask) Run(ctx context.Context) (core.Result, error) {
 	api, err := t.client.CreateApi(ctx, &rpc.CreateApiRequest{
 		Parent: fmt.Sprintf("projects/%s/locations/global", t.projectID),
 		ApiId:  t.apiID,
@@ -187,7 +187,7 @@ func (t uploadSpecTask) Run(ctx context.Context) error {
 			Name: fmt.Sprintf("projects/%s/locations/global/apis/%s", t.projectID, t.apiID),
 		}
 	default:
-		return fmt.Errorf("failed to ensure API exists: %s", err)
+		return nil, fmt.Errorf("failed to ensure API exists: %s", err)
 	}
 
 	version, err := t.client.CreateApiVersion(ctx, &rpc.CreateApiVersionRequest{
@@ -204,17 +204,17 @@ func (t uploadSpecTask) Run(ctx context.Context) error {
 			Name: fmt.Sprintf("projects/%s/apis/%s/versions/%s", t.projectID, t.apiID, t.versionID),
 		}
 	default:
-		return fmt.Errorf("failed to ensure API version exists: %s", err)
+		return nil, fmt.Errorf("failed to ensure API version exists: %s", err)
 	}
 
 	contents, err := ioutil.ReadFile(t.filepath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	compressed, err := core.GZippedBytes(contents)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	spec, err := t.client.CreateApiSpec(ctx, &rpc.CreateApiSpecRequest{
@@ -233,10 +233,10 @@ func (t uploadSpecTask) Run(ctx context.Context) error {
 	case codes.AlreadyExists:
 		// When the spec already exists we can silently continue.
 	default:
-		return fmt.Errorf("failed to upload API spec: %s", err)
+		return nil, fmt.Errorf("failed to upload API spec: %s", err)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (t uploadSpecTask) String() string {

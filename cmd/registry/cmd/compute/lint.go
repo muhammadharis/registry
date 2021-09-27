@@ -45,7 +45,7 @@ func lintCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 16)
+			taskQueue, _, wait := core.WorkerPool(ctx, 16)
 			defer wait()
 
 			// Generate tasks.
@@ -84,17 +84,17 @@ func lintRelation(linter string) string {
 	return "lint-" + linter
 }
 
-func (task *computeLintTask) Run(ctx context.Context) error {
+func (task *computeLintTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	data, err := core.GetBytesForSpec(ctx, task.client, spec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var relation string
 	var lint *rpc.Lint
@@ -107,10 +107,10 @@ func (task *computeLintTask) Run(ctx context.Context) error {
 		log.Debugf("Computing %s/artifacts/%s", spec.Name, relation)
 		lint, err = core.NewLintFromOpenAPI(spec.Name, data, task.linter)
 		if err != nil {
-			return fmt.Errorf("error processing OpenAPI: %s (%s)", spec.Name, err.Error())
+			return nil, fmt.Errorf("error processing OpenAPI: %s (%s)", spec.Name, err.Error())
 		}
 	} else if core.IsDiscovery(spec.GetMimeType()) {
-		return fmt.Errorf("unsupported Discovery document: %s", spec.Name)
+		return nil, fmt.Errorf("unsupported Discovery document: %s", spec.Name)
 	} else if core.IsProto(spec.GetMimeType()) && core.IsZipArchive(spec.GetMimeType()) {
 		// the default proto linter is the aip linter
 		if task.linter == "" {
@@ -120,10 +120,10 @@ func (task *computeLintTask) Run(ctx context.Context) error {
 		log.Debugf("Computing %s/artifacts/%s", spec.Name, relation)
 		lint, err = core.NewLintFromZippedProtos(spec.Name, data)
 		if err != nil {
-			return fmt.Errorf("error processing protos: %s (%s)", spec.Name, err.Error())
+			return nil, fmt.Errorf("error processing protos: %s (%s)", spec.Name, err.Error())
 		}
 	} else {
-		return fmt.Errorf("we don't know how to lint %s", spec.Name)
+		return nil, fmt.Errorf("we don't know how to lint %s", spec.Name)
 	}
 	subject := spec.GetName()
 	messageData, _ := proto.Marshal(lint)
@@ -134,7 +134,7 @@ func (task *computeLintTask) Run(ctx context.Context) error {
 	}
 	err = core.SetArtifact(ctx, task.client, artifact)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }

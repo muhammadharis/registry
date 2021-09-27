@@ -48,7 +48,7 @@ func complexityCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -77,13 +77,13 @@ func (task *computeComplexityTask) String() string {
 	return "compute complexity " + task.specName
 }
 
-func (task *computeComplexityTask) Run(ctx context.Context) error {
+func (task *computeComplexityTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	relation := "complexity"
 	log.Debugf("Computing %s/artifacts/%s", spec.Name, relation)
@@ -91,44 +91,44 @@ func (task *computeComplexityTask) Run(ctx context.Context) error {
 	if core.IsOpenAPIv2(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := oas2.ParseDocument(data)
 		if err != nil {
-			return fmt.Errorf("invalid OpenAPI: %s", spec.Name)
+			return nil, fmt.Errorf("invalid OpenAPI: %s", spec.Name)
 		}
 		complexity = core.SummarizeOpenAPIv2Document(document)
 	} else if core.IsOpenAPIv3(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := oas3.ParseDocument(data)
 		if err != nil {
-			return fmt.Errorf("invalid OpenAPI: %s", spec.Name)
+			return nil, fmt.Errorf("invalid OpenAPI: %s", spec.Name)
 		}
 		complexity = core.SummarizeOpenAPIv3Document(document)
 	} else if core.IsDiscovery(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := discovery.ParseDocument(data)
 		if err != nil {
-			return fmt.Errorf("invalid Discovery: %s", spec.Name)
+			return nil, fmt.Errorf("invalid Discovery: %s", spec.Name)
 		}
 		complexity = core.SummarizeDiscoveryDocument(document)
 	} else if core.IsProto(spec.GetMimeType()) && core.IsZipArchive(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		complexity, err = core.NewComplexityFromZippedProtos(data)
 		if err != nil {
-			return fmt.Errorf("error processing protos: %s", spec.Name)
+			return nil, fmt.Errorf("error processing protos: %s", spec.Name)
 		}
 	} else {
-		return fmt.Errorf("we don't know how to summarize %s", spec.Name)
+		return nil, fmt.Errorf("we don't know how to summarize %s", spec.Name)
 	}
 	subject := spec.GetName()
 	messageData, _ := proto.Marshal(complexity)
@@ -139,7 +139,7 @@ func (task *computeComplexityTask) Run(ctx context.Context) error {
 	}
 	err = core.SetArtifact(ctx, task.client, artifact)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }

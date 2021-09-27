@@ -48,7 +48,7 @@ func detailsCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -77,7 +77,7 @@ func (task *computeDetailsTask) String() string {
 	return "compute details " + task.apiName
 }
 
-func (task *computeDetailsTask) Run(ctx context.Context) error {
+func (task *computeDetailsTask) Run(ctx context.Context) (core.Result, error) {
 	m := names.SpecRegexp().FindStringSubmatch(task.apiName + "/versions/-/specs/-")
 	specs := make([]*rpc.ApiSpec, 0)
 	_ = core.ListSpecs(ctx, task.client, m, "", func(spec *rpc.ApiSpec) {
@@ -85,13 +85,13 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 	})
 	// use the last (presumed latest) spec
 	if len(specs) == 0 {
-		return nil
+		return nil, nil
 	}
 	spec := specs[len(specs)-1]
 	m = names.SpecRegexp().FindStringSubmatch(spec.Name)
 	spec, err := core.GetSpec(ctx, task.client, m, true, nil)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var title string
 	var description string
@@ -99,11 +99,11 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 	if core.IsOpenAPIv2(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := oas2.ParseDocument(data)
 		if document == nil && err != nil {
-			return fmt.Errorf("invalid OpenAPI v2: %s", spec.Name)
+			return nil, fmt.Errorf("invalid OpenAPI v2: %s", spec.Name)
 		}
 		if document.Info != nil {
 			title = document.Info.Title
@@ -125,11 +125,11 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 	} else if core.IsOpenAPIv3(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := oas3.ParseDocument(data)
 		if document == nil && err != nil {
-			return fmt.Errorf("invalid OpenAPI v3: %s", spec.Name)
+			return nil, fmt.Errorf("invalid OpenAPI v3: %s", spec.Name)
 		}
 		if document.Info != nil {
 			title = document.Info.Title
@@ -151,11 +151,11 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 	} else if core.IsDiscovery(spec.GetMimeType()) {
 		data, err := core.GetBytesForSpec(ctx, task.client, spec)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		document, err := discovery.ParseDocument(data)
 		if document == nil && err != nil {
-			return fmt.Errorf("invalid Discovery document: %s", spec.Name)
+			return nil, fmt.Errorf("invalid Discovery document: %s", spec.Name)
 		}
 		title := document.Title
 		description := document.Description
@@ -177,7 +177,7 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 		log.Debug(spec.Name)
 		details, err := core.NewDetailsFromZippedProtos(spec.GetContents())
 		if err != nil {
-			return fmt.Errorf("error processing protos: %s", spec.Name)
+			return nil, fmt.Errorf("error processing protos: %s", spec.Name)
 		}
 		if details != nil {
 			title := details.Title
@@ -204,10 +204,10 @@ func (task *computeDetailsTask) Run(ctx context.Context) error {
 			}
 		}
 	} else {
-		return fmt.Errorf("we don't know how to compute the title of %s", task.apiName)
+		return nil, fmt.Errorf("we don't know how to compute the title of %s", task.apiName)
 	}
 	if request != nil {
 		_, err = task.client.UpdateApi(ctx, request)
 	}
-	return err
+	return nil, err
 }

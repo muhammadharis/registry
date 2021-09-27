@@ -51,7 +51,7 @@ func searchIndexCommand(ctx context.Context) *cobra.Command {
 				log.WithError(err).Fatal("Failed to get client")
 			}
 			// Initialize task queue.
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Generate tasks.
 			name := args[0]
@@ -81,24 +81,24 @@ func (task *indexSpecTask) String() string {
 	return "index " + task.specName
 }
 
-func (task *indexSpecTask) Run(ctx context.Context) error {
+func (task *indexSpecTask) Run(ctx context.Context) (core.Result, error) {
 	request := &rpc.GetApiSpecRequest{
 		Name: task.specName,
 	}
 	spec, err := task.client.GetApiSpec(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	name := spec.GetName()
 	data, err := core.GetBytesForSpec(ctx, task.client, spec)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var message proto.Message
 	if core.IsOpenAPIv2(spec.GetMimeType()) {
 		document, err := oas2.ParseDocument(data)
 		if err != nil {
-			return fmt.Errorf("errors parsing %s", name)
+			return nil, fmt.Errorf("errors parsing %s", name)
 		}
 		// remove some fields to simplify the search index
 		document.Paths = nil
@@ -111,7 +111,7 @@ func (task *indexSpecTask) Run(ctx context.Context) error {
 	} else if core.IsOpenAPIv3(spec.GetMimeType()) {
 		document, err := oas3.ParseDocument(data)
 		if err != nil {
-			return fmt.Errorf("errors parsing %s", name)
+			return nil, fmt.Errorf("errors parsing %s", name)
 		}
 		// remove some fields to simplify the search index
 		document.Paths = nil
@@ -119,7 +119,7 @@ func (task *indexSpecTask) Run(ctx context.Context) error {
 		document.Security = nil
 		message = document
 	} else {
-		return fmt.Errorf("unable to generate descriptor for style %s", spec.GetMimeType())
+		return nil, fmt.Errorf("unable to generate descriptor for style %s", spec.GetMimeType())
 	}
 
 	// The bleve index requires serialized updates.
@@ -132,11 +132,11 @@ func (task *indexSpecTask) Run(ctx context.Context) error {
 		mapping := bleve.NewIndexMapping()
 		index, err = bleve.New(bleveDir, mapping)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	defer index.Close()
 	// Index the spec.
 	log.Debugf("Indexing %s", task.specName)
-	return index.Index(task.specName, message)
+	return nil, index.Index(task.specName, message)
 }

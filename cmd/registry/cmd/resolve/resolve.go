@@ -101,7 +101,7 @@ func Command(ctx context.Context) *cobra.Command {
 			}
 
 			log.Debug("Starting execution...")
-			taskQueue, wait := core.WorkerPool(ctx, 64)
+			taskQueue, _, wait := core.WorkerPool(ctx, 64)
 			defer wait()
 			// Submit tasks to taskQueue
 			for _, a := range actions {
